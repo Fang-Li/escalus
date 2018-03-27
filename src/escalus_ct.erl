@@ -69,14 +69,24 @@ interpret_config_file_path(RelPath) ->
             error({escalus_error, beam_not_loaded})
     end.
 
+%% TODO: This is CT-free! Move out of escalus_ct.
 rpc_call(Node, Module, Function, Args, TimeOut, Cookie) ->
-    case is_ct_available() of
-        true ->
-            ct_rpc:call(Node, Module, Function, Args, TimeOut, Cookie);
-        false ->
-            %% TODO: don't error out, should be easy to simulate ct_rpc:call/6
-            error({escalus_error, common_test_unavailable})
-    end.
+    call_with_cookie_match(Node, Module, Function, Args, TimeOut, Cookie).
+
+%% Copied from ct_rpc and renamed.
+call_with_cookie_match(Node, Module, Function, Args, TimeOut, Cookie) when is_atom(Node) ->
+    Cookie0 = set_the_cookie(Cookie),
+    Result = rpc:call(Node, Module, Function, Args, TimeOut),
+    _ = set_the_cookie(Cookie0),
+    Result.
+
+%% Copied from ct_rpc.
+set_the_cookie([]) ->
+    [];
+set_the_cookie(Cookie) ->
+    Cookie0 = erlang:get_cookie(),
+    erlang:set_cookie(node(),Cookie),
+    Cookie0.
 
 -spec log_stanza(undefined | binary(), in | out, exml_stream:element()) -> ok.
 log_stanza(undefined, _, _) -> ok;
