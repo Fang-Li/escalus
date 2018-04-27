@@ -110,20 +110,23 @@ wait_for_stanzas(Client, Count) ->
 
 -spec wait_for_stanzas(client(), non_neg_integer(), non_neg_integer()) -> [exml:element()].
 wait_for_stanzas(Client, Count, Timeout) ->
-    do_wait_for_stanzas(Client, Count, Timeout, []).
+    Tref = erlang:send_after(Timeout, self(), TimeoutMsg={timeout, make_ref()}),
+    Result = do_wait_for_stanzas(Client, Count, TimeoutMsg, []),
+    erlang:cancel_timer(Tref),
+    Result.
 
 do_wait_for_stanzas(_Client, 0, _TimeoutMsg, Acc) ->
     lists:reverse(Acc);
 do_wait_for_stanzas(#client{event_client=EventClient, jid=Jid, rcv_pid=Pid} = Client,
-                    Count, Timeout, Acc) ->
-    case escalus_connection:get_stanza_safe(Client, Timeout) of
-        {error,  timeout} ->
-            do_wait_for_stanzas(Client, 0, Timeout, Acc);
-        {Stanza, _} ->
+                    Count, TimeoutMsg, Acc) ->
+    receive
+        {stanza, Pid, Stanza, _Meta} ->
             escalus_event:pop_incoming_stanza(EventClient, Stanza),
             escalus_ct:log_stanza(Jid, in, Stanza),
-            do_wait_for_stanzas(Client, Count - 1, Timeout, [Stanza|Acc])
+            do_wait_for_stanzas(Client, Count - 1, TimeoutMsg, [Stanza|Acc]);
         %% FIXME: stream error
+        TimeoutMsg ->
+            do_wait_for_stanzas(Client, 0, TimeoutMsg, Acc)
     end.
 
 -spec wait_for_stanza(client()) -> exml:element().
